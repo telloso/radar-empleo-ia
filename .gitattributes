@@ -1,0 +1,2 @@
+# Normalize line endings to LF for all text files (WSL2 + Windows)
+* text=auto eol=lf
