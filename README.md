@@ -12,3 +12,8 @@ AI-powered job radar: collects job offers, stores them in PostgreSQL, scores the
 - **n8n** — daily Telegram digest
 - **Docker Compose** — local environment
 - **Terraform + Ansible** — deployment to a VPS
+
+
+## Status
+
+  - [x] Block 1: repository and Git setup
