@@ -38,6 +38,16 @@ services:
     ports:
       - "127.0.0.1:5678:5678"
 
+  # Batch job, not a server: it runs once and exits. The "jobs" profile keeps
+  # it out of `docker compose up`; start it with `docker compose run --rm collector`.
+  collector:
+    build: ./collector
+    image: radar-collector
+    profiles: ["jobs"]
+    environment:
+      COLLECTOR_SEARCH: ${COLLECTOR_SEARCH:-python}
+      JOOBLE_API_KEY: ${JOOBLE_API_KEY}
+
 volumes:
   pgdata:
   n8n_data:
