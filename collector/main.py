@@ -5,9 +5,14 @@ import os
 import sys
 
 from http_utils import FetchError
-from sources import remotive
+from sources import jooble, remotive
 
 logger = logging.getLogger("collector")
+
+SOURCES = {
+    "remotive": remotive.fetch_jobs,
+    "jooble": jooble.fetch_jobs,
+}
 
 
 def main() -> int:
@@ -17,16 +22,22 @@ def main() -> int:
     )
     search = os.getenv("COLLECTOR_SEARCH", "python")
 
-    try:
-        jobs = remotive.fetch_jobs(search)
-    except FetchError as exc:
-        logger.error("Remotive failed: %s", exc)
-        return 1
+    failed = []
+    for name, fetch_jobs in SOURCES.items():
+        # One broken source must not stop the others.
+        try:
+            jobs = fetch_jobs(search)
+        except FetchError as exc:
+            logger.error("%s failed: %s", name, exc)
+            failed.append(name)
+            continue
 
-    logger.info("Remotive: %d jobs for '%s'", len(jobs), search)
-    for job in jobs[:5]:
-        print(f"- {job.title} | {job.company} | {job.location} | {job.url}")
-    return 0
+        logger.info("%s: %d jobs for '%s'", name, len(jobs), search)
+        for job in jobs[:5]:
+            print(f"- {job.title} | {job.company} | {job.location} | {job.url}")
+
+    # Non-zero exit code so whoever runs us (Docker, n8n) can tell something broke.
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
