@@ -1,0 +1,3 @@
+# Tools for local development and tests; not installed in the Docker image.
+-r requirements.txt
+pytest==9.1.1

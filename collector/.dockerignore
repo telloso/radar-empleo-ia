@@ -4,3 +4,7 @@ __pycache__/
 .env
 Dockerfile
 .dockerignore
+tests/
+pytest.ini
+requirements-dev.txt
+.pytest_cache/
