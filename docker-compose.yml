@@ -44,9 +44,16 @@ services:
     build: ./collector
     image: radar-collector
     profiles: ["jobs"]
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       COLLECTOR_SEARCH: ${COLLECTOR_SEARCH:-python}
       JOOBLE_API_KEY: ${JOOBLE_API_KEY}
+      DB_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
 volumes:
   pgdata:
