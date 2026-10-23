@@ -55,6 +55,26 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
+  # Same image as the collector, different command: scores the jobs that have no
+  # score yet. Start it with `docker compose run --rm scorer`.
+  scorer:
+    build: ./collector
+    image: radar-collector
+    command: ["python", "scorer.py"]
+    profiles: ["jobs"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DB_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      # Personal data: mounted read-only at run time, never baked into the image.
+      - ./collector/profile.md:/app/profile.md:ro
+
 volumes:
   pgdata:
   n8n_data:
