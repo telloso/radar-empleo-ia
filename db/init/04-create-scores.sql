@@ -1,4 +1,4 @@
--- How well each job matches my CV, as scored by the Claude API (scorer/).
+-- How well each job matches my CV, as scored by the Claude API (collector/scorer.py).
 -- Runs only on the first start; on an existing volume apply it by hand with psql.
 
 CREATE TABLE IF NOT EXISTS scores (

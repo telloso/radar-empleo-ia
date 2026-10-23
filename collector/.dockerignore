@@ -8,3 +8,4 @@ tests/
 pytest.ini
 requirements-dev.txt
 .pytest_cache/
+profile.md

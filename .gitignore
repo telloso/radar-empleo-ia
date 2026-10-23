@@ -25,3 +25,6 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Personal profile sent to the Claude API (see collector/profile.example.md)
+collector/profile.md
