@@ -34,3 +34,19 @@ WHERE j.title NOT ILIKE '%senior%'
 GROUP BY j.id
 ORDER BY matches DESC, j.published_at DESC
 LIMIT 10;
+
+-- 5. Best matches according to Claude (see collector/scorer.py), with the reasons.
+SELECT s.score, s.fit, s.salary_ok, left(j.title, 45) AS title, j.company, s.reasons
+FROM scores AS s
+JOIN jobs AS j ON j.id = s.job_id
+WHERE s.prompt_version = 'v1'
+  AND s.fit IN ('high', 'medium')
+ORDER BY s.score DESC
+LIMIT 10;
+
+-- 6. What each scoring run cost, in US dollars (Claude Opus 5.5: $4 per million
+--    input tokens, $20 per million output tokens).
+SELECT prompt_version, model, count(*) AS jobs,
+       round(sum(input_tokens) * 4.0 / 1e6 + sum(output_tokens) * 20.0 / 1e6, 2) AS usd
+FROM scores
+GROUP BY prompt_version, model;
