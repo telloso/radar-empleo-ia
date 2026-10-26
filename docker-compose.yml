@@ -1,6 +1,9 @@
 services:
   db:
-    image: postgres:17
+    # Official Postgres 17 plus the pgvector extension, used for similarity search.
+    # Trixie (Debian 13) like the old postgres:17 image: same glibc, so the text
+    # indexes built with it keep their sort order (no collation mismatch).
+    image: pgvector/pgvector:pg17-trixie
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
