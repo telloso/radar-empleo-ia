@@ -94,6 +94,24 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
+  # Questions about the jobs in plain language (RAG). The question goes after the
+  # service name: `docker compose run --rm ask "¿Qué ofertas piden Docker?"`.
+  # entrypoint (not command), so those words are appended instead of replacing it.
+  ask:
+    build: ./collector
+    image: radar-collector
+    entrypoint: ["python", "ask.py"]
+    profiles: ["jobs"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DB_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
 volumes:
   pgdata:
   n8n_data:

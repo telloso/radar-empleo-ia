@@ -50,3 +50,24 @@ SELECT prompt_version, model, count(*) AS jobs,
        round(sum(input_tokens) * 4.0 / 1e6 + sum(output_tokens) * 20.0 / 1e6, 2) AS usd
 FROM scores
 GROUP BY prompt_version, model;
+
+-- 7. Jobs most similar in meaning to job 39 (Quest Global), by embeddings.
+--    <=> is pgvector's cosine distance: 0 = same meaning, 2 = opposite.
+--    DISTINCT ON keeps only the closest chunk of each job, so one long offer
+--    with many chunks cannot fill the whole top 5 by itself.
+WITH query AS (
+    SELECT embedding FROM job_chunks WHERE job_id = 39 AND chunk_index = 0
+),
+best_chunk AS (
+    SELECT DISTINCT ON (c.job_id)
+           c.job_id, c.chunk_index, c.embedding <=> q.embedding AS distance
+    FROM job_chunks AS c, query AS q
+    WHERE c.job_id <> 39
+    ORDER BY c.job_id, distance
+)
+SELECT round(b.distance::numeric, 3) AS distance, b.job_id, b.chunk_index,
+       left(j.title, 50) AS title, j.company
+FROM best_chunk AS b
+JOIN jobs AS j ON j.id = b.job_id
+ORDER BY b.distance
+LIMIT 5;
