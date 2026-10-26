@@ -1,3 +1,4 @@
 requests==2.32.3
 psycopg[binary]==3.3.6
 anthropic==2.2.0
+fastembed==0.9.1
