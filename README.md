@@ -21,9 +21,9 @@ flowchart LR
         collector["collector<br/>(Python, run on demand)"]
         scorer["scorer<br/>(Python, run on demand)"]
         embedder["embedder<br/>(local embedding model)"]
-        ask["ask<br/>(RAG, run on demand)"]
+        ask["ask<br/>(RAG + tool use, run on demand)"]
         db[("PostgreSQL 17 + pgvector<br/>databases: radar, n8n")]
-        n8n["n8n 2.43"]
+        n8n["n8n 2.43<br/>daily digest at 17:00"]
     end
     collector -- "host: db<br/>upsert into jobs" --> db
     db -- "unscored jobs" --> scorer
@@ -32,16 +32,19 @@ flowchart LR
     claude -- "JSON score" --> scorer
     db -- "jobs not embedded" --> embedder
     embedder -- "chunks + vectors<br/>into job_chunks" --> db
-    db -- "closest chunks" --> ask
-    ask -- "question + chunks" --> claude
+    claude -- "tool call: semantic<br/>or keyword search" --> ask
+    db -- "matching chunks" --> ask
+    ask -- "tool results" --> claude
     claude -- "answer citing [job N]" --> ask
     remotive(["Remotive API<br/>remote jobs"]) --> collector
     jooble(["Jooble API<br/>jobs in Madrid"]) --> collector
-    n8n -- "host: db" --> db
+    n8n -- "read-only role<br/>n8n_reader" --> db
+    n8n -- "top 5 new jobs" --> telegram(["Telegram bot"])
     db --- pgdata[("volume: pgdata")]
     n8n --- n8ndata[("volume: n8n_data")]
     you(["localhost"]) -- ":5432" --> db
     you -- ":5678" --> n8n
+    claudecode(["Claude Code"]) -- "MCP over HTTP<br/>/mcp-server/http" --> n8n
 ```
 
 - Services find each other by name on the Compose network (`db`), so no IPs are hard-coded.
@@ -64,6 +67,7 @@ docker compose ps             # both should be "Up"; db should be "healthy"
 - Collector: `docker compose run --rm collector` (see below)
 - Scorer: `docker compose run --rm scorer` (see below)
 - Embedder and questions: `docker compose run --rm embedder`, then `docker compose run --rm ask "…"` (see below)
+- Daily Telegram digest: n8n workflows in `n8n/workflows/` (see below)
 
 ## Job collector
 
@@ -147,11 +151,15 @@ Limits worth knowing:
 
 ## Questions about the jobs (RAG)
 
-`collector/ask.py` answers questions in plain language ("¿Qué ofertas en Madrid piden Python e IA generativa?") using only the stored jobs, and cites the jobs it used. It is Retrieval-Augmented Generation in three steps:
+`collector/ask.py` answers questions in plain language ("¿Qué ofertas en Madrid piden Python e IA generativa?") using only the stored jobs, and cites the jobs it used. It is Retrieval-Augmented Generation where Claude chooses how to search (tool use):
 
 1. **Index** (`collector/embedder.py`, once per new job): each job is cleaned of HTML and split into chunks of 60 words with 15 words of overlap, each starting with the job's title, company and location. Every chunk is turned into a 384-number vector (an *embedding*) and stored in `job_chunks` (`db/init/05-create-job-chunks.sql`) with the [pgvector](https://github.com/pgvector/pgvector) extension.
-2. **Retrieve**: the question is embedded with the same model, and PostgreSQL finds the closest chunks by cosine distance (`<=>`). A window function keeps the best two chunks of each job and the six best jobs, so one long offer cannot fill every slot.
-3. **Generate**: those chunks go to Claude inside `<job id="N">` tags. The system prompt says to answer only from them, to say so when they do not contain the answer, and to cite every job as `[job N]`. After the answer, the program checks each citation against the retrieved jobs, prints the source URLs, and warns about any job cited that was never retrieved.
+2. **Retrieve, with tools**: Claude gets two tools and decides which to call, with what words, and how many times:
+   - `search_jobs_semantic`: the query is embedded with the same model and PostgreSQL finds the closest chunks by cosine distance (`<=>`). A window function keeps the best two chunks of each job and the six best jobs, so one long offer cannot fill every slot. Good for topics ("cloud infrastructure" also finds AWS).
+   - `search_jobs_keyword`: a case-insensitive `ILIKE` over the chunks, with `%` and `_` escaped so the term matches literally. Good for exact names (Docker, Terraform, a company).
+3. **Generate**: the search results go back to Claude inside `<job id="N">` tags. The system prompt says to answer only from them, to say so when they do not contain the answer, and to cite every job as `[job N]`. After the answer, the program checks each citation against every job the searches returned, prints the source URLs, and warns about any job cited that no search returned.
+
+The agent loop is written by hand (`ask_claude`): send the question and the tool definitions; while the answer stops with `stop_reason == "tool_use"`, run each requested search and send all results back in one message; stop at `end_turn`. Claude only chooses: the code runs a fixed allow-list of two read-only searches, validates their input, and returns errors as `is_error` tool results so Claude can try another search. The loop is capped at 5 turns, and the last turn sets `tool_choice: none`, so Claude has to answer with what it has; every turn resends the whole conversation, so the cap also caps the cost.
 
 Design choices:
 
@@ -170,10 +178,51 @@ Query 7 in `db/queries.sql` shows the similarity search in plain SQL (jobs close
 
 Limits worth knowing:
 
-- **Exact keywords are a weak spot.** Asked whether any job mentions Docker or Kubernetes, the search missed the three jobs that do: one word barely moves the vector of a 60-word chunk. The usual fix, and the next step here, is *hybrid search*: combine vector similarity with PostgreSQL full-text search and merge the two rankings.
+- **Why tool use and not always both searches.** With vector search alone, asking about Docker missed the jobs that mention it: one word barely moves the vector of a 60-word chunk. The keyword tool fixed it (both Docker jobs found and cited). The alternative is *hybrid search*: always run both searches and merge the rankings with a fixed formula (Reciprocal Rank Fusion). That is cheaper and predictable, one Claude call per question; tool use adapts the search to each question (for "generative AI" it searched semantically and for the stem `generativ` at once), at the cost of more calls and less predictable behaviour.
 - Claude only sees excerpts, so an answer like "no job asks for X" means "none of the retrieved excerpts do"; the prompt makes it say so.
+- The keyword tool matches inside words (`go` also matches "Google"), so the tool description asks for distinctive terms.
 - A job whose description changes after it was embedded keeps its old chunks.
-- Each question costs about 1-2 cents with Claude Opus 5.5 (1,000-2,000 input tokens).
+- Each question costs about 2-3 cents with Claude Opus 5.5: usually two turns, 2,500-4,000 input tokens.
+
+## Daily digest with n8n
+
+Every day at 17:00 an n8n workflow sends the best new jobs to Telegram:
+
+```
+Schedule (17:00) → Postgres: top 5 jobs first seen in the last 24 h → IF any? ─yes→ Code: one HTML message → Telegram
+                                                                            └no─→ Telegram: "no new jobs"
+```
+
+- **Query**: a CTE with `DISTINCT ON` takes each job's latest score, and `count(*) OVER ()` gives the total of new jobs before `LIMIT 5` ("top 5 of 12").
+- **Always a message**: the Postgres node outputs one empty item when there are no rows, so the IF can send "no new jobs". Silence would look the same as a broken workflow.
+- **Escaped HTML**: job titles are third-party text, so `&`, `<` and `>` are escaped before Telegram parses the message.
+- **Errors**: a second workflow (Error Trigger → Telegram) is set as the digest's error workflow, so any failure (database down, revoked token) sends an alert with the failing node.
+- **Least privilege**: n8n reads the jobs as `n8n_reader` (`db/init/06-create-n8n-reader.sh`), a role that can only `SELECT` from `jobs` and `scores`.
+- **Secrets**: the bot token is an n8n credential, encrypted with `N8N_ENCRYPTION_KEY`; workflows only reference it by name. Node access to environment variables stays blocked (n8n's secure default).
+
+Workflows are kept in Git as clean templates (`n8n/workflows/*.json`): no Telegram chat id, no credential ids, no owner data. `n8n/workflows.py` moves them in and out of the running n8n:
+
+```bash
+python3 n8n/workflows.py import   # fills in TELEGRAM_CHAT_ID from .env and credential ids by name
+python3 n8n/workflows.py export   # pulls them back and strips personal and instance data
+```
+
+Setup on a new instance: create the credentials `Telegram Radar` (bot token from @BotFather) and `Postgres Radar (read-only)` (host `db`, user `n8n_reader`), run `import`, then publish the digest **from the n8n editor**. Importing unpublishes workflows, and publishing from the CLI marks them as published without registering their triggers: the schedule silently never ran until it was published from the editor.
+
+### Claude Code over MCP
+
+n8n has a built-in MCP server (`/mcp-server/http`), and Claude Code is connected to it as an MCP client:
+
+```bash
+claude mcp add --transport http n8n http://localhost:5678/mcp-server/http --header "Authorization: Bearer <token>"
+```
+
+Claude Code can then search the workflows, inspect executions ("did today's digest run?") or run the digest, without opening the editor. The connection is stored in the user's local Claude Code config, not in the repo, and only the daily digest is enabled for MCP access.
+
+Limits worth knowing:
+
+- Locally, the digest only runs when the PC and Docker are on, and nothing runs the collector, scorer and embedder on a schedule yet, so most days say "no new jobs". On the VPS (next block) a timer will run them before the digest.
+- n8n cannot start the Python containers itself: that would mean giving it the Docker socket, which is control over the whole host.
 
 ## Status
 
@@ -183,3 +232,4 @@ Limits worth knowing:
 - [x] Block 4: SQL — jobs stored in PostgreSQL without duplicates, queries with filters and a JOIN
 - [x] Block 5: Claude API — jobs scored against my CV with structured output
 - [x] Block 6: RAG — questions about the jobs answered from local embeddings in pgvector, with checked citations
+- [x] Block 7: n8n — daily Telegram digest with error alerts, Claude choosing semantic or keyword search with tool use, and Claude Code connected to n8n over MCP
