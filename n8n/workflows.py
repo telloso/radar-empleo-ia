@@ -5,6 +5,9 @@ credential ids and no owner data. `import` fills those in (chat id from .env,
 credential ids from the running n8n, matched by credential name); `export`
 pulls the workflows back out of n8n and strips them again, ready to commit.
 
+After an import, publish the scheduled workflows from the n8n editor (the
+script reminds you which ones).
+
 Usage, from the repo root with `docker compose up -d` running:
     python3 n8n/workflows.py import
     python3 n8n/workflows.py export
@@ -83,6 +86,11 @@ def import_workflows() -> None:
     in_n8n("n8n", "import:workflow", f"--input={CONTAINER_FILE}")
     in_n8n("rm", CONTAINER_FILE)
     print(f"Imported {len(workflows)} workflows: {', '.join(w['name'] for w in workflows)}")
+    # Importing unpublishes workflows, and publishing from the CLI marks them as
+    # published without registering their triggers. Publish them from the editor.
+    for workflow in workflows:
+        if workflow.get("active"):
+            print(f"Publish \"{workflow['name']}\" from the n8n editor, or its trigger will not run")
 
 
 def export_workflows() -> None:
