@@ -1,0 +1,59 @@
+{
+  "id": "radarErrorAlert1",
+  "name": "Radar - Error alert",
+  "description": null,
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "7a3e9b10-2c4d-4f6a-8b1c-3d5e7f9a0b01",
+      "name": "When a workflow fails"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=⚠️ Radar: workflow \"{{ $json.workflow.name }}\" failed\nNode: {{ $json.execution.lastNodeExecuted }}\nError: {{ $json.execution.error.message }}\n{{ $json.execution.url }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "7a3e9b10-2c4d-4f6a-8b1c-3d5e7f9a0b02",
+      "name": "Send failure alert",
+      "webhookId": "7a3e9b10-2c4d-4f6a-8b1c-3d5e7f9a0b03",
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram Radar"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When a workflow fails": {
+      "main": [
+        [
+          {
+            "node": "Send failure alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

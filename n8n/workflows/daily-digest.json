@@ -1,0 +1,203 @@
+{
+  "id": "radarDailyDigest",
+  "name": "Radar - Daily digest",
+  "description": null,
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "5f0c1a52-8d0e-4c8e-9a51-1e6f2b7c0a01",
+      "name": "Every day at 08:30"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Best scored jobs first seen in the last 24 hours, using each job's latest score.\nWITH latest AS (\n    SELECT DISTINCT ON (job_id) job_id, score, fit, reasons\n    FROM scores\n    ORDER BY job_id, scored_at DESC\n)\nSELECT j.id, j.title, j.company, j.location, j.url,\n       l.score, l.fit, l.reasons,\n       -- Window function: counted before LIMIT, so it is the total of new jobs.\n       count(*) OVER () AS new_jobs\nFROM jobs j\nJOIN latest l ON l.job_id = j.id\nWHERE j.first_seen_at >= now() - interval '24 hours'\nORDER BY l.score DESC\nLIMIT 5;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        0
+      ],
+      "id": "5f0c1a52-8d0e-4c8e-9a51-1e6f2b7c0a02",
+      "name": "Top new jobs",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "name": "Postgres Radar (read-only)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5f0c1a52-8d0e-4c8e-9a51-1e6f2b7c0a03",
+              "leftValue": "={{ $json.title }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "5f0c1a52-8d0e-4c8e-9a51-1e6f2b7c0a04",
+      "name": "Any new jobs?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Joins every job the query returned into one Telegram message (HTML).\nconst escape = (text) => String(text ?? '')\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\nconst fitIcon = { high: '🟢', medium: '🟡', low: '🔴' };\nconst shorten = (text, max) => (text.length > max ? text.slice(0, max) + '…' : text);\n\nconst jobs = $input.all().map((item) => item.json);\n\nconst lines = jobs.map((job, i) =>\n  `${i + 1}. ${fitIcon[job.fit] ?? '⚪'} <b>${job.score}</b> · <a href=\"${escape(job.url)}\">${escape(job.title)}</a>\\n` +\n  `${escape(job.company)} · ${escape(job.location || 'no location')}\\n` +\n  `<i>${escape(shorten(job.reasons, 160))}</i>`\n);\n\nconst header = `🔎 <b>Radar</b> · top ${jobs.length} of ${jobs[0].new_jobs} new jobs`;\nreturn [{ json: { text: [header, ...lines].join('\\n\\n') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        -96
+      ],
+      "id": "5f0c1a52-8d0e-4c8e-9a51-1e6f2b7c0a05",
+      "name": "Format digest"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        880,
+        -96
+      ],
+      "id": "5f0c1a52-8d0e-4c8e-9a51-1e6f2b7c0a06",
+      "name": "Send digest",
+      "webhookId": "5f0c1a52-8d0e-4c8e-9a51-1e6f2b7c0a07",
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram Radar"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "✅ Radar: no new scored jobs in the last 24 hours. The workflow is running.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        672,
+        112
+      ],
+      "id": "5f0c1a52-8d0e-4c8e-9a51-1e6f2b7c0a08",
+      "name": "Send no-jobs notice",
+      "webhookId": "5f0c1a52-8d0e-4c8e-9a51-1e6f2b7c0a09",
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram Radar"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every day at 08:30": {
+      "main": [
+        [
+          {
+            "node": "Top new jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Top new jobs": {
+      "main": [
+        [
+          {
+            "node": "Any new jobs?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any new jobs?": {
+      "main": [
+        [
+          {
+            "node": "Format digest",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send no-jobs notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format digest": {
+      "main": [
+        [
+          {
+            "node": "Send digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "radarErrorAlert1",
+    "binaryMode": "separate"
+  },
+  "tags": []
+}
