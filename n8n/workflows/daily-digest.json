@@ -9,8 +9,8 @@
         "rule": {
           "interval": [
             {
-              "triggerAtHour": 8,
-              "triggerAtMinute": 30
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
             }
           ]
         }
@@ -22,7 +22,7 @@
         0
       ],
       "id": "5f0c1a52-8d0e-4c8e-9a51-1e6f2b7c0a01",
-      "name": "Every day at 08:30"
+      "name": "Every day at 17:00"
     },
     {
       "parameters": {
@@ -142,7 +142,7 @@
     }
   ],
   "connections": {
-    "Every day at 08:30": {
+    "Every day at 17:00": {
       "main": [
         [
           {
