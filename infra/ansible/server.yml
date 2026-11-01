@@ -1,0 +1,104 @@
+# Connects as deploy, so reaching the first task proves that user works before
+# root login is disabled. Safe to run again: a second run should report changed=0.
+- name: Harden the server and install Docker
+  hosts: radar
+  remote_user: deploy
+  become: true
+
+  tasks:
+    - name: Upgrade system packages
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+        upgrade: safe
+
+    - name: Set the time zone
+      community.general.timezone:
+        name: Europe/Madrid
+
+    # 00- sorts first, and sshd keeps the first value it reads for each setting.
+    - name: Disable root and password logins over SSH
+      ansible.builtin.copy:
+        content: |
+          PermitRootLogin no
+          PasswordAuthentication no
+        dest: /etc/ssh/sshd_config.d/00-hardening.conf
+        mode: "0644"
+        validate: /usr/sbin/sshd -t -f %s
+      notify: Restart SSH
+
+    - name: Install fail2ban and automatic security updates
+      ansible.builtin.apt:
+        name:
+          - fail2ban
+          - unattended-upgrades
+
+    - name: Keep fail2ban running
+      ansible.builtin.service:
+        name: fail2ban
+        state: started
+        enabled: true
+
+    - name: Turn on automatic security updates
+      ansible.builtin.copy:
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        mode: "0644"
+
+    # Safety margin for memory peaks, such as the embedding model loading.
+    - name: Create the swap file
+      ansible.builtin.command:
+        cmd: fallocate -l 2G /swapfile
+        creates: /swapfile
+      register: swap_file
+
+    - name: Restrict the swap file to root
+      ansible.builtin.file:
+        path: /swapfile
+        mode: "0600"
+
+    - name: Format and enable the swap file
+      ansible.builtin.shell: mkswap /swapfile && swapon /swapfile
+      when: swap_file.changed
+
+    - name: Enable swap after a reboot
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: /swapfile none swap sw 0 0
+
+    - name: Install Docker and Compose
+      ansible.builtin.apt:
+        name:
+          - docker.io
+          - docker-compose-v2
+          - docker-buildx
+
+    # Membership in this group is equivalent to root on this machine.
+    - name: Let deploy use Docker
+      ansible.builtin.user:
+        name: deploy
+        groups: docker
+        append: true
+
+    - name: Keep Docker running
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Check whether an upgrade needs a reboot
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Reboot if needed
+      ansible.builtin.reboot:
+      when: reboot_required.stat.exists
+
+  handlers:
+    - name: Restart SSH
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
