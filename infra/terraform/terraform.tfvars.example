@@ -1,0 +1,4 @@
+# Copy this file to terraform.tfvars and fill in the value. Never commit terraform.tfvars.
+
+# Your public IPv4 address (find it with: curl -4 https://ifconfig.me)
+admin_ip = ""

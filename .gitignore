@@ -20,6 +20,11 @@ venv/
 *.tfstate.*
 *.tfvars
 
+# Ansible: the real inventory holds the server address, the vault its secrets
+infra/ansible/inventory.ini
+infra/ansible/.vault_pass
+infra/ansible/group_vars/all/vault.yml
+
 # Editors and OS
 .vscode/
 .idea/
