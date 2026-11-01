@@ -9,7 +9,8 @@
         "rule": {
           "interval": [
             {
-              "triggerAtHour": 17
+              "triggerAtHour": 8,
+              "triggerAtMinute": 30
             }
           ]
         }
@@ -21,12 +22,12 @@
         0
       ],
       "id": "5f0c1a52-8d0e-4c8e-9a51-1e6f2b7c0a01",
-      "name": "Every day at 17:00"
+      "name": "Every day at 08:30"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- Best scored jobs first seen in the last 24 hours, using each job's latest score.\nWITH latest AS (\n    SELECT DISTINCT ON (job_id) job_id, score, fit, reasons\n    FROM scores\n    ORDER BY job_id, scored_at DESC\n)\nSELECT j.id, j.title, j.company, j.location, j.url,\n       l.score, l.fit, l.reasons,\n       -- Window function: counted before LIMIT, so it is the total of new jobs.\n       count(*) OVER () AS new_jobs\nFROM jobs j\nJOIN latest l ON l.job_id = j.id\nWHERE j.first_seen_at >= now() - interval '24 hours'\nORDER BY l.score DESC\nLIMIT 5;",
+        "query": "-- Best jobs scored in the last 24 hours (a daily limit can delay a job's score), using each job's latest score.\nWITH latest AS (\n    SELECT DISTINCT ON (job_id) job_id, score, fit, reasons, scored_at\n    FROM scores\n    ORDER BY job_id, scored_at DESC\n)\nSELECT j.id, j.title, j.company, j.location, j.url,\n       l.score, l.fit, l.reasons,\n       -- Window function: counted before LIMIT, so it is the total of new jobs.\n       count(*) OVER () AS new_jobs\nFROM jobs j\nJOIN latest l ON l.job_id = j.id\nWHERE l.scored_at >= now() - interval '24 hours'\nORDER BY l.score DESC\nLIMIT 5;",
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
@@ -141,7 +142,7 @@
     }
   ],
   "connections": {
-    "Every day at 17:00": {
+    "Every day at 08:30": {
       "main": [
         [
           {

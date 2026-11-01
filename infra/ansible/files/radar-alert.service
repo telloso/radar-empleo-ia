@@ -1,0 +1,8 @@
+# Started by OnFailure. It talks to Telegram directly, so it still works if n8n is down.
+[Unit]
+Description=Send a Telegram alert when a scheduled job fails
+
+[Service]
+Type=oneshot
+EnvironmentFile=/home/deploy/radar-empleo-ia/.env
+ExecStart=/usr/bin/curl -fsS --max-time 20 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -d "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=⚠️ Radar: a scheduled job failed on the server. Check: journalctl -u radar-jobs -u radar-backup -n 50"

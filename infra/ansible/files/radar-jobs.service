@@ -1,0 +1,13 @@
+# The daily pipeline. A oneshot service runs each ExecStart in order and stops at the
+# first failure, which triggers the alert. Unscored jobs wait for the next run.
+[Unit]
+Description=Collect, score and embed new jobs
+OnFailure=radar-alert.service
+
+[Service]
+Type=oneshot
+User=deploy
+WorkingDirectory=/home/deploy/radar-empleo-ia
+ExecStart=/usr/bin/docker compose run --rm -T collector
+ExecStart=/usr/bin/docker compose run --rm -T scorer
+ExecStart=/usr/bin/docker compose run --rm -T embedder

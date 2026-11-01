@@ -1,5 +1,5 @@
-# Puts the app on the server and starts the database. n8n starts after the data
-# is restored, so it does not create an empty schema first.
+# Puts the app on the server, starts it and schedules the daily jobs. On a new server,
+# restore the database backups before starting n8n (see the README).
 - name: Deploy the app
   hosts: radar
   remote_user: deploy
@@ -36,9 +36,49 @@
         chdir: "{{ app_dir }}"
       changed_when: false
 
-    - name: Start the database
+    - name: Start the database and n8n
       ansible.builtin.command:
-        cmd: docker compose up -d --wait db
+        cmd: docker compose up -d --wait db n8n
         chdir: "{{ app_dir }}"
-      register: db_up
-      changed_when: "'Started' in db_up.stderr or 'Recreated' in db_up.stderr"
+      register: app_up
+      changed_when: "'Started' in app_up.stderr or 'Recreated' in app_up.stderr"
+
+    - name: Install the backup script
+      become: true
+      ansible.builtin.copy:
+        src: radar-backup.sh
+        dest: /usr/local/bin/radar-backup.sh
+        mode: "0755"
+
+    - name: Install the scheduled jobs
+      become: true
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
+        mode: "0644"
+      loop:
+        - radar-jobs.service
+        - radar-jobs.timer
+        - radar-backup.service
+        - radar-backup.timer
+        - radar-alert.service
+      notify: Reload systemd
+
+    - name: Run the handlers now, so the timers start with the new units
+      ansible.builtin.meta: flush_handlers
+
+    - name: Turn on the timers
+      become: true
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop:
+        - radar-jobs.timer
+        - radar-backup.timer
+
+  handlers:
+    - name: Reload systemd
+      become: true
+      ansible.builtin.systemd_service:
+        daemon_reload: true

@@ -1,0 +1,11 @@
+# Half an hour before the n8n digest (08:30).
+[Unit]
+Description=Run the job pipeline every morning
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+# If the server was down at 08:00, run as soon as it is back.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
