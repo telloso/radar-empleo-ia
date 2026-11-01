@@ -1,5 +1,5 @@
 # Puts the app on the server, starts it and schedules the daily jobs. To bring existing
-# data to a new server, restore the backups afterwards (see the README).
+# data to a new server, restore the backups afterwards (see docs/deployment.md).
 - name: Deploy the app
   hosts: radar
   remote_user: deploy
