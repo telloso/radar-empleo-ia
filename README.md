@@ -4,16 +4,17 @@ AI-powered job radar: collects job offers, stores them in PostgreSQL, scores the
 
 > Work in progress. This README will grow as each part is built.
 
-## Planned stack
+## Stack
 
 - **Python** — job collection scripts
 - **PostgreSQL** — storage and querying
 - **Claude API** — scoring with structured output, RAG
 - **n8n** — daily Telegram digest
-- **Docker Compose** — local environment
-- **Terraform + Ansible** — deployment to a VPS
+- **Docker Compose** — runs everything, locally and on the server
+- **Terraform + Ansible** — provisioning and configuration of a VPS
+- **systemd timers** — daily backups and job pipeline on the server
 
-## Architecture (current)
+## Architecture
 
 ```mermaid
 flowchart LR
@@ -23,7 +24,7 @@ flowchart LR
         embedder["embedder<br/>(local embedding model)"]
         ask["ask<br/>(RAG + tool use, run on demand)"]
         db[("PostgreSQL 17 + pgvector<br/>databases: radar, n8n")]
-        n8n["n8n 2.43<br/>daily digest at 17:00"]
+        n8n["n8n 2.43<br/>daily digest at 08:30"]
     end
     collector -- "host: db<br/>upsert into jobs" --> db
     db -- "unscored jobs" --> scorer
@@ -39,17 +40,18 @@ flowchart LR
     remotive(["Remotive API<br/>remote jobs"]) --> collector
     jooble(["Jooble API<br/>jobs in Madrid"]) --> collector
     n8n -- "read-only role<br/>n8n_reader" --> db
-    n8n -- "top 5 new jobs" --> telegram(["Telegram bot"])
+    n8n -- "top 5 jobs scored today" --> telegram(["Telegram bot"])
     db --- pgdata[("volume: pgdata")]
     n8n --- n8ndata[("volume: n8n_data")]
-    you(["localhost"]) -- ":5432" --> db
+    you(["localhost<br/>(SSH tunnel on the VPS)"]) -- ":5432" --> db
     you -- ":5678" --> n8n
     claudecode(["Claude Code"]) -- "MCP over HTTP<br/>/mcp-server/http" --> n8n
 ```
 
 - Services find each other by name on the Compose network (`db`), so no IPs are hard-coded.
 - Data lives in named volumes and survives `docker compose down` (but not `down -v`).
-- Ports are bound to `127.0.0.1` only, so nothing is exposed to the local network.
+- Ports are bound to `127.0.0.1` only, so nothing is exposed to the network.
+- The same Compose file runs on the VPS: see [Deployment](#deployment).
 - Secrets come from a git-ignored `.env`; `.env.example` lists the variables.
 
 ## Getting started
@@ -133,6 +135,7 @@ How it works:
 3. **Structured output**: `client.messages.parse()` with a Pydantic model (`JobScore`). The API constrains the answer to that JSON schema and the SDK validates it, so every field maps straight to a column: `score` (0-100), `fit` (`high`/`medium`/`low`), `matched_skills`, `missing_skills`, `salary_ok` (`NULL` when the job does not say) and `reasons`. `CHECK` constraints on the table are a second line of defence.
 4. **Errors**: the SDK retries `429` and `5xx` with exponential backoff; a job that still fails is logged and skipped (it is retried on the next run); a rejected API key stops the run. Each score is committed on its own, so a crash never loses scores already paid for.
 5. **Cost tracking**: input and output tokens are stored per job. Scoring the first 40 jobs with Claude Opus 5.5 cost $0.80, about 2 cents a job (query 6 in `db/queries.sql`).
+6. **Daily limit**: `SCORER_LIMIT` (default 10) caps each run, newest jobs first, so a day with many new offers cannot empty the API balance. The rest wait for later runs.
 
 The profile is personal data: `collector/profile.md` is git-ignored and kept out of the image (it is mounted read-only into the container). Copy `collector/profile.example.md` to start your own.
 
@@ -186,14 +189,14 @@ Limits worth knowing:
 
 ## Daily digest with n8n
 
-Every day at 17:00 an n8n workflow sends the best new jobs to Telegram:
+Every day at 08:30 an n8n workflow sends the best jobs scored in the last 24 hours to Telegram:
 
 ```
-Schedule (17:00) → Postgres: top 5 jobs first seen in the last 24 h → IF any? ─yes→ Code: one HTML message → Telegram
+Schedule (08:30) → Postgres: top 5 jobs scored in the last 24 h → IF any? ─yes→ Code: one HTML message → Telegram
                                                                             └no─→ Telegram: "no new jobs"
 ```
 
-- **Query**: a CTE with `DISTINCT ON` takes each job's latest score, and `count(*) OVER ()` gives the total of new jobs before `LIMIT 5` ("top 5 of 12").
+- **Query**: a CTE with `DISTINCT ON` takes each job's latest score, and `count(*) OVER ()` gives the total before `LIMIT 5` ("top 5 of 12"). It filters by scoring date, not first-seen date, so a job delayed by the daily limit still reaches a digest.
 - **Always a message**: the Postgres node outputs one empty item when there are no rows, so the IF can send "no new jobs". Silence would look the same as a broken workflow.
 - **Escaped HTML**: job titles are third-party text, so `&`, `<` and `>` are escaped before Telegram parses the message.
 - **Errors**: a second workflow (Error Trigger → Telegram) is set as the digest's error workflow, so any failure (database down, revoked token) sends an alert with the failing node.
@@ -221,8 +224,67 @@ Claude Code can then search the workflows, inspect executions ("did today's dige
 
 Limits worth knowing:
 
-- Locally, the digest only runs when the PC and Docker are on, and nothing runs the collector, scorer and embedder on a schedule yet, so most days say "no new jobs". On the VPS (next block) a timer will run them before the digest.
+- Bumping `PROMPT_VERSION` rescores old jobs, and they would appear in the next digest as if they were new.
 - n8n cannot start the Python containers itself: that would mean giving it the Docker socket, which is control over the whole host.
+
+## Deployment
+
+The app runs on a Hetzner CX23 (2 vCPU, 4 GB of RAM, about €7.25 a month), created and configured from code in `infra/`:
+
+| Step | Tool | What it does |
+| --- | --- | --- |
+| Provision | Terraform (`infra/terraform/`) | Creates the server, its SSH key and a firewall |
+| Bootstrap | Ansible (`bootstrap.yml`) | First run, as root: creates the `deploy` user |
+| Configure | Ansible (`server.yml`) | Security settings, swap and Docker |
+| Deploy | Ansible (`deploy.yml`) | Code, secrets, image, services and timers |
+
+```bash
+export HCLOUD_TOKEN=...                     # better: read -rs HCLOUD_TOKEN && export HCLOUD_TOKEN
+cd infra/terraform
+cp terraform.tfvars.example terraform.tfvars   # then fill in your IP
+terraform init && terraform apply
+
+cd ../ansible
+printf '[radar]\n%s\n' "$(terraform -chdir=../terraform output -raw server_ip)" > inventory.ini
+ansible-playbook bootstrap.yml
+ansible-playbook server.yml                 # a second run should report changed=0
+ansible-playbook deploy.yml                 # the server pulls from GitHub: push first
+```
+
+**Security.** The firewall only allows SSH from one IP, and Postgres and n8n are also bound to `127.0.0.1`, so a mistake in one layer does not expose them. SSH accepts keys only: root and password logins are disabled, and `server.yml` connects as `deploy`, which proves that user works before root is closed. fail2ban and automatic security updates add further layers. n8n is reached through an SSH tunnel:
+
+```bash
+ssh -i ~/.ssh/radar_vps -N -L 5678:localhost:5678 deploy@<server-ip>   # then open http://localhost:5678
+```
+
+**Secrets.** `.env` and `collector/profile.md` are not in Git: Ansible copies them from the local machine over SSH with mode `600`. Terraform state, variables and the real inventory are git-ignored too, as they hold the server's address and possibly secrets.
+
+**Daily schedule** (Europe/Madrid):
+
+| Time | Run by | What |
+| --- | --- | --- |
+| 07:30 | systemd timer | Dumps both databases, keeps a week of copies |
+| 08:00 | systemd timer | `collector` → `scorer` → `embedder`, stopping at the first failure |
+| 08:30 | n8n | Sends the digest to Telegram |
+
+A failed systemd job sends a Telegram alert directly with `curl` (`TELEGRAM_BOT_TOKEN` in `.env`), so it works even if n8n is down. `Persistent=true` runs a missed timer as soon as the server is back.
+
+**Restoring a backup.** Stop n8n first, restore both databases, then start it again. Use the same `N8N_ENCRYPTION_KEY`, or n8n cannot decrypt its credentials. Then publish the digest from the editor if needed.
+
+```bash
+docker compose stop n8n
+docker compose exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < radar-YYYY-MM-DD.dump
+docker compose exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d n8n --clean --if-exists' < n8n-YYYY-MM-DD.dump
+docker compose up -d n8n
+```
+
+Limits worth knowing:
+
+- **Backups live on the same server.** They protect against mistakes and bad runs, not against losing the server. Copying them off the server is the next step.
+- **One server, no redundancy**: if it is down, the digest waits. That is fine for a personal tool.
+- **A new home IP locks SSH out** until `terraform.tfvars` is updated and `terraform apply` runs, which works because it goes through Hetzner's API.
+- **Terraform state is local**, which suits one person. A team would use a remote, encrypted backend with locking.
+- **Hetzner has cost alerts but no hard spending cap**, so an alert is set in its console.
 
 ## Status
 
@@ -233,3 +295,4 @@ Limits worth knowing:
 - [x] Block 5: Claude API — jobs scored against my CV with structured output
 - [x] Block 6: RAG — questions about the jobs answered from local embeddings in pgvector, with checked citations
 - [x] Block 7: n8n — daily Telegram digest with error alerts, Claude choosing semantic or keyword search with tool use, and Claude Code connected to n8n over MCP
+- [ ] Block 8: Cloud — deployed to a VPS with Terraform and Ansible, with daily timers, backups and failure alerts (first unattended run pending)
