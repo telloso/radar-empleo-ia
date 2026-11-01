@@ -1,0 +1,44 @@
+# Puts the app on the server and starts the database. n8n starts after the data
+# is restored, so it does not create an empty schema first.
+- name: Deploy the app
+  hosts: radar
+  remote_user: deploy
+  vars:
+    app_dir: /home/deploy/radar-empleo-ia
+    repo_root: "{{ playbook_dir }}/../.."
+
+  tasks:
+    - name: Get the code
+      ansible.builtin.git:
+        repo: https://github.com/telloso/radar-empleo-ia.git
+        dest: "{{ app_dir }}"
+        version: main
+
+    # These two are not in Git: they travel from this machine over SSH.
+    - name: Copy the secrets
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/.env"
+        dest: "{{ app_dir }}/.env"
+        mode: "0600"
+
+    - name: Copy the private profile
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/collector/profile.md"
+        dest: "{{ app_dir }}/collector/profile.md"
+        mode: "0600"
+
+    # All the job services share this image, so building one is enough. Docker's
+    # layer cache makes a repeat build fast and harmless, but its output gives no
+    # reliable signal of change, so it is never reported as changed.
+    - name: Build the job image
+      ansible.builtin.command:
+        cmd: docker compose build collector
+        chdir: "{{ app_dir }}"
+      changed_when: false
+
+    - name: Start the database
+      ansible.builtin.command:
+        cmd: docker compose up -d --wait db
+        chdir: "{{ app_dir }}"
+      register: db_up
+      changed_when: "'Started' in db_up.stderr or 'Recreated' in db_up.stderr"
