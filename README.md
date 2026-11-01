@@ -1,18 +1,40 @@
-# radar-empleo-ia
+# AI Job Radar
 
-AI-powered job radar: collects job offers, stores them in PostgreSQL, scores them against my CV with the Claude API, answers questions about them (RAG) and sends a daily digest to Telegram via n8n.
+Reading job boards takes hours, and most offers do not fit. This system collects job offers, scores each one against my CV with the Claude API, and sends me the best ones on Telegram, so I only read what is worth applying to. I can also ask questions about the stored offers in plain language.
 
-> Work in progress. This README will grow as each part is built.
+> **Status:** deployed on a VPS and tested by hand. The first unattended morning run is pending.
 
-## Stack
+## What it does
 
-- **Python** — job collection scripts
-- **PostgreSQL** — storage and querying
-- **Claude API** — scoring with structured output, RAG
-- **n8n** — daily Telegram digest
-- **Docker Compose** — runs everything, locally and on the server
-- **Terraform + Ansible** — provisioning and configuration of a VPS
-- **systemd timers** — daily backups and job pipeline on the server
+1. **Collects** offers from two job APIs with a Python batch job.
+2. **Scores** them against my CV with Claude: a 0-100 score, matched and missing skills, and the reasons, as validated structured output.
+3. **Sends** the top 5 to Telegram with n8n, or a notice if there is nothing new, so silence always means something is broken.
+4. **Answers questions** such as "Which jobs ask for Docker?" with RAG. Claude chooses between semantic and keyword search, and the code checks every citation.
+
+A schedule on the server runs all of this at 08:00 and 08:30, and alerts me on Telegram if a job fails.
+
+## Real numbers
+
+From the first run on the server (1 November 2026):
+
+| | |
+| --- | --- |
+| Jobs stored | 66, from 2 sources |
+| Jobs scored | 50, capped at 10 per run to control cost |
+| Cost of one scoring run | $0.14 for 10 jobs with Claude Opus 5.5 |
+| Server | €7.25 a month |
+
+## What it demonstrates
+
+| Area | In this project |
+| --- | --- |
+| **Python** | API clients with retries and exponential backoff, secrets hidden from logs, 15 tests with `pytest` |
+| **SQL** | PostgreSQL 17, idempotent upserts, parameterised queries, `JOIN`s and window functions |
+| **LLMs** | Claude API, structured output, prompt injection defences, cost tracking per job |
+| **RAG and agents** | Local embeddings in pgvector, a hand-written tool use loop with a turn limit, checked citations |
+| **Automation** | n8n workflows with error handling, kept in Git as clean templates, and Claude Code connected over MCP |
+| **Infrastructure** | Docker Compose, Terraform, Ansible and systemd timers on a VPS |
+| **Security and operations** | Layered firewall and SSH hardening, least-privilege database role, tested backups, failure alerts |
 
 ## Architecture
 
