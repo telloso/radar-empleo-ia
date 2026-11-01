@@ -40,6 +40,36 @@ From the first run on the server (1 November 2026):
 
 ```mermaid
 flowchart LR
+    apis(["Job APIs<br/>Remotive, Jooble"])
+    claude(["Claude API"])
+    telegram(["Telegram"])
+    me(["Me"])
+
+    subgraph vps["Hetzner VPS: created with Terraform, configured with Ansible"]
+        timers["systemd timers<br/>07:30 backup, 08:00 jobs"]
+        jobs["Python jobs in Docker<br/>collect, score, embed"]
+        db[("PostgreSQL + pgvector")]
+        n8n["n8n<br/>08:30 digest"]
+        ask["ask<br/>questions with RAG"]
+    end
+
+    timers --> jobs
+    apis --> jobs
+    jobs <--> claude
+    jobs --> db
+    db --> n8n
+    n8n --> telegram
+    telegram --> me
+    me -- "SSH only, from my IP" --> ask
+    ask <--> db
+    ask <--> claude
+```
+
+<details>
+<summary>Detailed view of the containers</summary>
+
+```mermaid
+flowchart LR
     subgraph compose["Docker Compose network"]
         collector["collector<br/>(Python, run on demand)"]
         scorer["scorer<br/>(Python, run on demand)"]
@@ -69,6 +99,8 @@ flowchart LR
     you -- ":5678" --> n8n
     claudecode(["Claude Code"]) -- "MCP over HTTP<br/>/mcp-server/http" --> n8n
 ```
+
+</details>
 
 - Services find each other by name on the Compose network (`db`), so no IPs are hard-coded.
 - Data lives in named volumes and survives `docker compose down` (but not `down -v`).
