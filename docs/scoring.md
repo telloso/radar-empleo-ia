@@ -25,3 +25,19 @@ Limits worth knowing:
 - Jooble returns a snippet, not the full job description, so those scores rest on less information (the reasons say so when it matters).
 - On jobs I had already assessed by hand, the scores agreed with my own judgment (for example, a mid-level "AI Engineer Python" role scored 62, `medium`), but 40 jobs is a small sample.
 - No prompt caching: the profile plus rubric is around 1,000 tokens, below the minimum cacheable size for this model.
+
+## Why Haiku
+
+The scorer started on Claude Opus 5.5 and moved to Claude Haiku 5.5 after comparing both on the same 21 jobs (query 8 in `db/queries.sql`), against criteria set before seeing the results:
+
+| Criterion | Target | Result |
+| --- | --- | --- |
+| Average score difference | 10 points or fewer | 5.1 (largest 13) |
+| Top 5 overlap | At least 4 of 5 | 4 of 5, with ties at 45 in Opus |
+| Jobs swapping between `high` and `low` | None | None |
+| Cost per job | | $0.0008 against $0.026, about 32 times less |
+
+Haiku compresses the scale a little: weak jobs score a few points higher and the best job scored lower (72 to 62, from `high` to `medium`, though still first). Twenty-one jobs is a small sample, and Opus is the reference here, not the truth.
+
+The prompt did not change, so `PROMPT_VERSION` stays `v1`: older jobs keep their Opus score, and the `model` column records which model produced each one. `SCORER_MODEL` switches the model back without a code change.
+

@@ -21,7 +21,7 @@ From the first run on the server (1 November 2026):
 | --- | --- |
 | Jobs stored | 66, from 2 sources |
 | Jobs scored | 50, capped at 10 per run to control cost |
-| Cost of one scoring run | $0.14 for 10 jobs with Claude Opus 5.5 |
+| Cost per scored job | $0.0008 with Claude Haiku 5.5, against $0.026 with Claude Opus 5.5 on the same 21 jobs |
 | Server | €7.25 a month |
 
 ## What it demonstrates
@@ -81,7 +81,7 @@ flowchart LR
     collector -- "host: db<br/>upsert into jobs" --> db
     db -- "unscored jobs" --> scorer
     scorer -- "insert into scores" --> db
-    scorer -- "profile + job" --> claude(["Claude API<br/>Opus 5.5"])
+    scorer -- "profile + job" --> claude(["Claude API<br/>Haiku 5.5 to score,<br/>Opus 5.5 for questions"])
     claude -- "JSON score" --> scorer
     db -- "jobs not embedded" --> embedder
     embedder -- "chunks + vectors<br/>into job_chunks" --> db
