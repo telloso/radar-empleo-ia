@@ -2,7 +2,7 @@
 
 Reading job boards takes hours, and most offers do not fit. This system collects job offers, scores each one against my CV with the Claude API, and sends me the best ones on Telegram, so I only read what is worth applying to. I can also ask questions about the stored offers in plain language.
 
-> **Status:** deployed on a VPS and tested by hand. The first unattended morning run is pending.
+> **Status:** running on a VPS every morning, with no one at the keyboard.
 
 ## What it does
 
@@ -151,5 +151,5 @@ docker compose ps             # both should be "Up"; db should be "healthy"
 - [x] Block 5: Claude API — jobs scored against my CV with structured output
 - [x] Block 6: RAG — questions about the jobs answered from local embeddings in pgvector, with checked citations
 - [x] Block 7: n8n — daily Telegram digest with error alerts, Claude choosing semantic or keyword search with tool use, and Claude Code connected to n8n over MCP
-- [ ] Block 8: Cloud — deployed to a VPS with Terraform and Ansible, with daily timers, backups and failure alerts (first unattended run pending)
+- [x] Block 8: Cloud — deployed to a VPS with Terraform and Ansible, with daily timers, backups and failure alerts
 - [ ] Block 9: Showcase — README, diagram and a 2-minute demo video
