@@ -71,3 +71,42 @@ FROM best_chunk AS b
 JOIN jobs AS j ON j.id = b.job_id
 ORDER BY b.distance
 LIMIT 5;
+
+-- 8. Two models compared on the same jobs: score per job, average difference, top 5
+-- overlap and cost per job. Prices in dollars per million tokens (input, output).
+WITH pairs AS (
+    SELECT j.id, j.source, left(j.title, 40) AS title,
+           o.score AS opus, h.score AS haiku, o.fit AS opus_fit, h.fit AS haiku_fit,
+           h.score - o.score AS diff
+    FROM jobs j
+    JOIN scores o ON o.job_id = j.id AND o.prompt_version = 'v1'
+    JOIN scores h ON h.job_id = j.id AND h.prompt_version = 'v1-haiku'
+)
+SELECT * FROM pairs ORDER BY abs(diff) DESC;
+
+WITH pairs AS (
+    SELECT o.job_id, o.score AS opus, h.score AS haiku, o.fit AS opus_fit, h.fit AS haiku_fit,
+           row_number() OVER (ORDER BY o.score DESC, o.job_id) AS opus_rank,
+           row_number() OVER (ORDER BY h.score DESC, h.job_id) AS haiku_rank
+    FROM scores o
+    JOIN scores h ON h.job_id = o.job_id AND h.prompt_version = 'v1-haiku'
+    WHERE o.prompt_version = 'v1'
+)
+SELECT count(*) AS jobs,
+       round(avg(abs(haiku - opus)), 1) AS avg_abs_diff,
+       round(avg(haiku - opus), 1) AS avg_signed_diff,
+       max(abs(haiku - opus)) AS max_diff,
+       count(*) FILTER (WHERE opus_fit = haiku_fit) AS same_fit,
+       count(*) FILTER (WHERE (opus_fit = 'high' AND haiku_fit = 'low')
+                           OR (opus_fit = 'low' AND haiku_fit = 'high')) AS high_low_swaps,
+       count(*) FILTER (WHERE opus_rank <= 5 AND haiku_rank <= 5) AS top5_overlap
+FROM pairs;
+
+SELECT s.model, count(*) AS jobs,
+       round(avg(s.input_tokens)) AS avg_input, round(avg(s.output_tokens)) AS avg_output,
+       round(avg(s.input_tokens * p.input_price + s.output_tokens * p.output_price) / 1e6, 5) AS usd_per_job
+FROM scores s
+JOIN (VALUES ('claude-opus-5-5', 4.0, 20.0), ('claude-haiku-5-5', 0.10, 0.50))
+     AS p (model, input_price, output_price) ON p.model = s.model
+WHERE s.job_id IN (SELECT job_id FROM scores WHERE prompt_version = 'v1-haiku')
+GROUP BY s.model;

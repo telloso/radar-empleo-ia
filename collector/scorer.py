@@ -17,7 +17,7 @@ logger = logging.getLogger("scorer")
 
 MODEL = os.getenv("SCORER_MODEL", "claude-opus-5-5")
 # Bump it when SYSTEM_PROMPT or JobScore change: jobs get scored again under the new version.
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = os.getenv("PROMPT_VERSION", "v1")
 PROFILE_PATH = Path(os.getenv("PROFILE_PATH", Path(__file__).with_name("profile.md")))
 
 
