@@ -118,6 +118,28 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
+  # Read-only HTTP API over jobs and scores (api/). A server, so it stays up:
+  # `docker compose up -d api`, then open http://localhost:8000/docs.
+  api:
+    build: ./api
+    image: radar-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB}
+      API_READER_PASSWORD: ${API_READER_PASSWORD}
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      # The slim image has no curl: ask /health with Python's own HTTP client.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
 volumes:
   pgdata:
   n8n_data:
