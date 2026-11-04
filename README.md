@@ -12,6 +12,7 @@ Reading job boards takes hours, and most offers do not fit. This system collects
 2. **Scores** them against my CV with Claude: a 0-100 score, matched and missing skills, and the reasons, as validated structured output.
 3. **Sends** the top 5 to Telegram with n8n, or a notice if there is nothing new, so silence always means something is broken.
 4. **Answers questions** such as "Which jobs ask for Docker?" with RAG. Claude chooses between semantic and keyword search, and the code checks every citation.
+5. **Serves the results over HTTP** with a small read-only FastAPI app (`/jobs/top`, `/jobs/{id}`), with interactive docs at `/docs`.
 
 A schedule on the server runs all of this at 08:00 and 08:30, and alerts me on Telegram if a job fails.
 
@@ -30,13 +31,14 @@ From the first run on the server (1 November 2026):
 
 | Area | In this project |
 | --- | --- |
-| **Python** | API clients with retries and exponential backoff, secrets hidden from logs, 15 tests with `pytest` |
+| **Python** | API clients with retries and exponential backoff, secrets hidden from logs, 26 tests with `pytest` |
+| **Web APIs** | FastAPI with validated parameters, Pydantic response models, dependency injection and SQLAlchemy |
 | **SQL** | PostgreSQL 17, idempotent upserts, parameterised queries, `JOIN`s and window functions |
 | **LLMs** | Claude API, structured output, prompt injection defences, cost tracking per job |
 | **RAG and agents** | Local embeddings in pgvector, a hand-written tool use loop with a turn limit, checked citations |
 | **Automation** | n8n workflows with error handling, kept in Git as clean templates, and Claude Code connected over MCP |
 | **Infrastructure** | Docker Compose, Terraform, Ansible and systemd timers on a VPS |
-| **Security and operations** | Layered firewall and SSH hardening, least-privilege database role, tested backups, failure alerts |
+| **Security and operations** | Layered firewall and SSH hardening, least-privilege database roles, tested backups, failure alerts |
 
 ## Architecture
 
@@ -79,6 +81,7 @@ flowchart LR
         ask["ask<br/>(RAG + tool use, run on demand)"]
         db[("PostgreSQL 17 + pgvector<br/>databases: radar, n8n")]
         n8n["n8n 2.43<br/>daily digest at 08:30"]
+        api["api<br/>(FastAPI, always on)"]
     end
     collector -- "host: db<br/>upsert into jobs" --> db
     db -- "unscored jobs" --> scorer
@@ -95,10 +98,12 @@ flowchart LR
     jooble(["Jooble API<br/>jobs in Madrid"]) --> collector
     n8n -- "read-only role<br/>n8n_reader" --> db
     n8n -- "top 5 jobs scored today" --> telegram(["Telegram bot"])
+    api -- "read-only role<br/>api_reader" --> db
     db --- pgdata[("volume: pgdata")]
     n8n --- n8ndata[("volume: n8n_data")]
     you(["localhost<br/>(SSH tunnel on the VPS)"]) -- ":5432" --> db
     you -- ":5678" --> n8n
+    you -- ":8000" --> api
     claudecode(["Claude Code"]) -- "MCP over HTTP<br/>/mcp-server/http" --> n8n
 ```
 
@@ -116,14 +121,15 @@ Requirements: Docker with Docker Compose.
 
 ```bash
 cp .env.example .env          # then fill in the values
-docker compose up -d          # start PostgreSQL and n8n
-docker compose ps             # both should be "Up"; db should be "healthy"
+docker compose up -d          # start PostgreSQL, n8n and the API
+docker compose ps             # all should be "Up"; db and api "healthy"
 ```
 
 - n8n: http://localhost:5678
 - PostgreSQL: `docker compose exec db psql -U <user> -d <db>`
 - Collect, score and embed: `docker compose run --rm collector`, then `scorer`, then `embedder`
 - Ask a question: `docker compose run --rm ask "¿Alguna oferta pide n8n?"`
+- HTTP API: `docker compose up -d --build api`, then open http://localhost:8000/docs (see [the API guide](docs/api.md))
 - Daily digest: see [the n8n guide](docs/n8n.md) to set up its credentials and workflows
 
 ## Limits worth knowing
@@ -142,6 +148,7 @@ docker compose ps             # both should be "Up"; db should be "healthy"
 | [Job scoring](docs/scoring.md) | Prompt, structured output, errors and cost |
 | [Questions (RAG)](docs/rag.md) | Embeddings, tool use loop and design choices |
 | [Daily digest](docs/n8n.md) | n8n workflows, error alerts and MCP |
+| [HTTP API](docs/api.md) | FastAPI endpoints, dependency injection, SQLAlchemy and tests |
 | [Deployment](docs/deployment.md) | Terraform, Ansible, security, schedule and backups |
 
 ## Status
@@ -155,3 +162,4 @@ docker compose ps             # both should be "Up"; db should be "healthy"
 - [x] Block 7: n8n — daily Telegram digest with error alerts, Claude choosing semantic or keyword search with tool use, and Claude Code connected to n8n over MCP
 - [x] Block 8: Cloud — deployed to a VPS with Terraform and Ansible, with daily timers, backups and failure alerts
 - [x] Block 9: Showcase — README, diagram and a [demo video](https://youtu.be/1ZDMsGEKpS4)
+- [x] Block 10: Web API — read-only FastAPI app over the scored jobs, with SQLAlchemy, tests and its own container
