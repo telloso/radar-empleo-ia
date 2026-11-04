@@ -1,0 +1,5 @@
+# Tools for local development and tests; not installed in the Docker image.
+-r requirements.txt
+pytest==9.2.0
+# Used by FastAPI's TestClient to send requests to the app without a server.
+httpx==0.28.1
