@@ -6,7 +6,6 @@ Run it locally with `uvicorn main:app --reload` and open http://localhost:8000/d
 from collections.abc import Iterator
 from typing import Annotated
 
-import psycopg
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
@@ -21,17 +20,18 @@ app = FastAPI(
 
 
 def get_repository() -> Iterator[db.JobRepository]:
-    """Dependency: one connection per request, closed once the response is built."""
-    with db.connect() as conn:
-        yield db.JobRepository(conn)
+    """Dependency: one session per request, closed once the response is built
+    (its connection goes back to the pool)."""
+    with db.connect() as session:
+        yield db.JobRepository(session)
 
 
 # Any endpoint with a parameter of this type gets a repository from get_repository.
 Repository = Annotated[db.JobRepository, Depends(get_repository)]
 
 
-@app.exception_handler(psycopg.OperationalError)
-def database_unavailable(request: Request, exc: psycopg.OperationalError) -> JSONResponse:
+@app.exception_handler(db.DatabaseUnavailable)
+def database_unavailable(request: Request, exc: db.DatabaseUnavailable) -> JSONResponse:
     """Database down or unreachable: answer 503 instead of a bare 500 with a traceback."""
     return JSONResponse(status_code=503, content={"detail": "Database unavailable"})
 

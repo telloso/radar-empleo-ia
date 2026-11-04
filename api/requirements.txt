@@ -1,3 +1,5 @@
 fastapi==0.162.0
 uvicorn==0.54.0
+SQLAlchemy==2.1.8
+# The driver SQLAlchemy talks to Postgres through (postgresql+psycopg in db.py).
 psycopg[binary]==3.3.8

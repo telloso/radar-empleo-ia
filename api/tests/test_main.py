@@ -6,10 +6,10 @@ so these tests need no database and run in milliseconds.
 
 from datetime import datetime, timezone
 
-import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
+import db
 from main import app, get_repository
 from schemas import JobDetail, JobSummary, Score
 
@@ -106,7 +106,7 @@ def test_top_route_is_not_taken_as_a_job_id(client: TestClient, repo: FakeReposi
 
 def test_database_down_returns_503() -> None:
     def broken_repository():
-        raise psycopg.OperationalError("connection refused")
+        raise db.DatabaseUnavailable("SELECT 1", {}, Exception("connection refused"))
 
     app.dependency_overrides[get_repository] = broken_repository
     try:
