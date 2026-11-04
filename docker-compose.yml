@@ -11,6 +11,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       # Used by db/init/06-create-n8n-reader.sh
       N8N_READER_PASSWORD: ${N8N_READER_PASSWORD}
+      # Used by db/init/07-create-api-reader.sh
+      API_READER_PASSWORD: ${API_READER_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
