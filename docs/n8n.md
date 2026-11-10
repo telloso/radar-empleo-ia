@@ -3,11 +3,11 @@
 Every day at 08:30 an n8n workflow sends the best jobs scored in the last 24 hours to Telegram:
 
 ```
-Schedule (08:30) → Postgres: top 5 jobs scored in the last 24 h → IF any? ─yes→ Code: one HTML message → Telegram
+Schedule (08:30) → Postgres: top 5 jobs scoring 40+ in the last 24 h → IF any? ─yes→ Code: one HTML message → Telegram
                                                                             └no─→ Telegram: "no new jobs"
 ```
 
-- **Query**: a CTE with `DISTINCT ON` takes each job's latest score, and `count(*) OVER ()` gives the total before `LIMIT 5` ("top 5 of 12"). It filters by scoring date, not first-seen date, so a job delayed by the daily limit still reaches a digest.
+- **Query**: a CTE with `DISTINCT ON` takes each job's latest score, and `count(*) OVER ()` gives the total before `LIMIT 5` ("top 5 of 7 scoring 40+, 19 new in total"). Jobs scoring under 40 are left out of the message but stay in the database, where `ask` and the API still see them. It filters by scoring date, not first-seen date, so a job delayed by the daily limit still reaches a digest.
 - **Always a message**: the Postgres node outputs one empty item when there are no rows, so the IF can send "no new jobs". Silence would look the same as a broken workflow.
 - **Escaped HTML**: job titles are third-party text, so `&`, `<` and `>` are escaped before Telegram parses the message.
 - **Errors**: a second workflow (Error Trigger → Telegram) is set as the digest's error workflow, so any failure (database down, revoked token) sends an alert with the failing node.

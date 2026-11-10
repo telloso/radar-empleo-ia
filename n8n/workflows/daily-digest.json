@@ -27,7 +27,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- Best jobs scored in the last 24 hours (a daily limit can delay a job's score), using each job's latest score.\nWITH latest AS (\n    SELECT DISTINCT ON (job_id) job_id, score, fit, reasons, scored_at\n    FROM scores\n    ORDER BY job_id, scored_at DESC\n)\nSELECT j.id, j.title, j.company, j.location, j.url,\n       l.score, l.fit, l.reasons,\n       -- Window function: counted before LIMIT, so it is the total of new jobs.\n       count(*) OVER () AS new_jobs\nFROM jobs j\nJOIN latest l ON l.job_id = j.id\nWHERE l.scored_at >= now() - interval '24 hours'\nORDER BY l.score DESC\nLIMIT 5;",
+        "query": "-- Best jobs scored in the last 24 hours (a daily limit can delay a job's score), using each job's latest score.\n-- Jobs below MIN_SCORE stay in the database (ask and the API still see them); the digest just leaves them out.\nWITH latest AS (\n    SELECT DISTINCT ON (job_id) job_id, score, fit, reasons, scored_at\n    FROM scores\n    ORDER BY job_id, scored_at DESC\n),\nrecent AS (\n    SELECT j.id, j.title, j.company, j.location, j.url,\n           l.score, l.fit, l.reasons\n    FROM jobs j\n    JOIN latest l ON l.job_id = j.id\n    WHERE l.scored_at >= now() - interval '24 hours'\n)\nSELECT r.*,\n       -- Window function: counted before LIMIT, so it is the total of good new jobs.\n       count(*) OVER () AS good_jobs,\n       (SELECT count(*) FROM recent) AS new_jobs\nFROM recent r\nWHERE r.score >= 40  -- MIN_SCORE\nORDER BY r.score DESC\nLIMIT 5;",
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
@@ -81,7 +81,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Joins every job the query returned into one Telegram message (HTML).\nconst escape = (text) => String(text ?? '')\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\nconst fitIcon = { high: '🟢', medium: '🟡', low: '🔴' };\nconst shorten = (text, max) => (text.length > max ? text.slice(0, max) + '…' : text);\n\nconst jobs = $input.all().map((item) => item.json);\n\nconst lines = jobs.map((job, i) =>\n  `${i + 1}. ${fitIcon[job.fit] ?? '⚪'} <b>${job.score}</b> · <a href=\"${escape(job.url)}\">${escape(job.title)}</a>\\n` +\n  `${escape(job.company)} · ${escape(job.location || 'no location')}\\n` +\n  `<i>${escape(shorten(job.reasons, 160))}</i>`\n);\n\nconst header = `🔎 <b>Radar</b> · top ${jobs.length} of ${jobs[0].new_jobs} new jobs`;\nreturn [{ json: { text: [header, ...lines].join('\\n\\n') } }];"
+        "jsCode": "// Joins every job the query returned into one Telegram message (HTML).\nconst escape = (text) => String(text ?? '')\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\nconst fitIcon = { high: '🟢', medium: '🟡', low: '🔴' };\nconst shorten = (text, max) => (text.length > max ? text.slice(0, max) + '…' : text);\n\nconst jobs = $input.all().map((item) => item.json);\n\nconst lines = jobs.map((job, i) =>\n  `${i + 1}. ${fitIcon[job.fit] ?? '⚪'} <b>${job.score}</b> · <a href=\"${escape(job.url)}\">${escape(job.title)}</a>\\n` +\n  `${escape(job.company)} · ${escape(job.location || 'no location')}\\n` +\n  `<i>${escape(shorten(job.reasons, 160))}</i>`\n);\n\nconst { good_jobs, new_jobs } = jobs[0];\nconst header = `🔎 <b>Radar</b> · top ${jobs.length} of ${good_jobs} new jobs scoring 40+ (${new_jobs} new in total)`;\nreturn [{ json: { text: [header, ...lines].join('\\n\\n') } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -120,7 +120,7 @@
     {
       "parameters": {
         "chatId": "YOUR_TELEGRAM_CHAT_ID",
-        "text": "✅ Radar: no new scored jobs in the last 24 hours. The workflow is running.",
+        "text": "✅ Radar: no new jobs scoring 40+ in the last 24 hours. The workflow is running.",
         "additionalFields": {
           "appendAttribution": false
         }
