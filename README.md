@@ -8,9 +8,9 @@ Reading job boards takes hours, and most offers do not fit. This system collects
 
 ## What it does
 
-1. **Collects** offers from two job APIs with a Python batch job.
+1. **Collects** offers from two job APIs with a Python batch job, running several searches per source.
 2. **Scores** them against my CV with Claude: a 0-100 score, matched and missing skills, and the reasons, as validated structured output.
-3. **Sends** the top 5 to Telegram with n8n, or a notice if there is nothing new, so silence always means something is broken.
+3. **Sends** the top 5 scoring 40+ to Telegram with n8n, or a notice if there is nothing new, so silence always means something is broken.
 4. **Answers questions** such as "Which jobs ask for Docker?" with RAG. Claude chooses between semantic and keyword search, and the code checks every citation.
 5. **Serves the results over HTTP** with a small read-only FastAPI app (`/jobs/top`, `/jobs/{id}`), with interactive docs at `/docs`.
 
@@ -31,7 +31,7 @@ From the first run on the server (1 November 2026):
 
 | Area | In this project |
 | --- | --- |
-| **Python** | API clients with retries and exponential backoff, secrets hidden from logs, 26 tests with `pytest` |
+| **Python** | API clients with retries and exponential backoff, secrets hidden from logs, 33 tests with `pytest` |
 | **Web APIs** | FastAPI with validated parameters, Pydantic response models, dependency injection and SQLAlchemy |
 | **SQL** | PostgreSQL 17, idempotent upserts, parameterised queries, `JOIN`s and window functions |
 | **LLMs** | Claude API, structured output, prompt injection defences, cost tracking per job |
@@ -97,7 +97,7 @@ flowchart LR
     remotive(["Remotive API<br/>remote jobs"]) --> collector
     jooble(["Jooble API<br/>jobs in Madrid"]) --> collector
     n8n -- "read-only role<br/>n8n_reader" --> db
-    n8n -- "top 5 jobs scored today" --> telegram(["Telegram bot"])
+    n8n -- "top 5 jobs scored today (40+)" --> telegram(["Telegram bot"])
     api -- "read-only role<br/>api_reader" --> db
     db --- pgdata[("volume: pgdata")]
     n8n --- n8ndata[("volume: n8n_data")]
