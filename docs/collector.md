@@ -4,7 +4,7 @@
 
 | Source | What | Auth | Notes |
 | --- | --- | --- | --- |
-| [Remotive](https://github.com/remotive-io/remote-jobs-api) | Remote jobs | None | Max ~4 requests a day; jobs must link back to Remotive |
+| [Remotive](https://github.com/remotive-io/remote-jobs-api) | Remote jobs | None | Max ~4 requests a day; jobs must link back to Remotive. The public feed returns the same ~13 latest jobs whatever the search, so it runs one search |
 | [Jooble](https://es.jooble.org/api/about) | Jobs in Madrid | Free API key (`JOOBLE_API_KEY`) | `POST` with a JSON body; the key goes in the URL |
 
 How it is built:

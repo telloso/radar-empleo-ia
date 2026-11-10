@@ -56,8 +56,9 @@ services:
         condition: service_healthy
     environment:
       # Comma-separated searches per source; .env can override them.
-      # Remotive allows ~4 requests a day, so it gets two; Jooble searches Madrid.
-      REMOTIVE_SEARCHES: ${REMOTIVE_SEARCHES:-python,automation}
+      # Remotive's public feed returns its latest ~13 jobs whatever the search
+      # (checked 11/11/2026), so one request is enough; Jooble searches Madrid.
+      REMOTIVE_SEARCHES: ${REMOTIVE_SEARCHES:-python}
       JOOBLE_SEARCHES: ${JOOBLE_SEARCHES:-python,inteligencia artificial,automatización,administrador de sistemas,devops,n8n}
       JOOBLE_API_KEY: ${JOOBLE_API_KEY}
       DB_HOST: db
