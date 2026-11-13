@@ -78,8 +78,9 @@ services:
         condition: service_healthy
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      # Most jobs scored per run: each one costs about 2 cents.
-      SCORER_LIMIT: ${SCORER_LIMIT:-10}
+      # Most jobs scored per run. With six Jooble searches, 20-30 new jobs arrive a
+      # day; with Haiku, 20 a day costs well under a dollar a month.
+      SCORER_LIMIT: ${SCORER_LIMIT:-20}
       DB_HOST: db
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
